@@ -64,3 +64,22 @@ export function htmlToText(content, { cap = DESCRIPTION_CAP } = {}) {
     .trim()
     .slice(0, cap);
 }
+
+/**
+ * Collapse a markup fragment to its visible text.
+ * Comments are stripped FIRST: the anchor bodies carry `<!-- d ico postulez -->`
+ * between the title and a spacer image, and a naive tag strip would leave the
+ * comment body sitting inside the title.
+ * @param {string} fragment
+ * @returns {string}
+ */
+export function visibleText(fragment) {
+  return decodeEntities(
+    String(fragment ?? '')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<[^>]+>/g, ' '),
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+

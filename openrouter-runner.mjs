@@ -40,7 +40,7 @@ import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { withJdArchiveSection } from './lib/jd-archive-section.mjs';
 import { locateApplyReport } from './apply-scope.mjs';
-import { classifyLiveness } from './liveness-core.mjs';
+import { classifyLiveness, isUnreadableVerdict } from './liveness-core.mjs';
 import { installPiiInterceptor } from './lib/pii-interceptor.mjs';
 import { assertLlmRequestAllowed } from './lib/llm-outbound.mjs';
 
@@ -79,7 +79,7 @@ const OPENROUTER_API_URL    = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 const MAX_TOKENS            = 8192;
 const RATE_LIMIT_DELAY_MS   = 2500;  // pause between requests on free tier
-const MODEL_TIMEOUT_MS      = 15_000; // abort a single model call after 15 s
+const MODEL_TIMEOUT_MS      = 120_000; // abort a single model call after 120 s
 
 // Provider priority order — models are sorted by provider prefix, not hardcoded names.
 // Add, remove, or reorder providers here; model names are resolved at runtime from the API.
@@ -411,7 +411,7 @@ async function callOpenRouter(systemPrompt, userMessage) {
 
 // Exported so tests/openrouter-runner-429-reset.test.mjs can script fetch()
 // against the real rotation and blacklist logic without a network or a CLI run.
-export { callOpenRouter, rateLimitCounts, blacklistedModels };
+export { callOpenRouter, rateLimitCounts, blacklistedModels, MODEL_TIMEOUT_MS };
 
 // ---------------------------------------------------------------------------
 // Context loading
@@ -425,12 +425,67 @@ function loadContext() {
   };
 }
 
-export function buildSystemPrompt(modeContent, ctx) {
+// The mode files are written for Claude Code, which has Playwright, WebFetch,
+// Bash and file reads. This runner sends no `tools`, so a model that follows
+// them answers with tool calls and no evaluation (#5809). Say so before them,
+// and drop the parts that tell the model to use tools.
+function noToolsNote(evaluate) {
+  return [
+    'RUNNER NOTE: you have no tools in this run.',
+    // Only evaluate sends a posting; apply sends an evaluation report.
+    evaluate
+      ? 'The job text is in the user message and the CV is below.'
+      : 'Everything you need is in the user message and the CV below.',
+    'Do not navigate, fetch, read files or run commands, and ignore any instruction below to do so.',
+  ].join('\n');
+}
+
+// Matched by heading, not line number, so edits to modes/ don't move them. A
+// section runs to the next heading of the same or a higher level, or to its
+// `until` line. A heading that is gone leaves the text as it was.
+const TOOL_SECTIONS = [
+  '## Liveness gate (URL inputs)',
+  '## Bounded Research Budget',
+  '### Tools',
+  // Stops before the agency-confirmation rule, which the runner keeps.
+  { heading: '### Subagent delegation (cost guardrail)', until: '<!-- guardrail:agency-confirmation -->' },
+  '### Prior-contact FYI (non-scoring)',
+  '### 1b. Embed ATS keyword coverage',
+  '### 2. Record in tracker',
+  '### 3. Salary observations (desired ask only)',
+];
+// Single lines that tell the model to run a command or search, by how they start.
+const TOOL_LINES = [
+  '1b. **First evaluation of each session:** Run `node cv-sync-check.mjs`',
+  '4. Use WebSearch for comp and company data',
+  '- Search: `"{company}"',
+  '- `{###}` = next sequential number',
+];
+const READ_CV_RULE = '**RULE: NEVER hardcode metrics from proof points.**';
+
+export function stripToolInstructions(text) {
+  let lines = text.split('\n');
+  for (const section of TOOL_SECTIONS) {
+    const { heading, until } = typeof section === 'string' ? { heading: section } : section;
+    const start = lines.findIndex(l => l.trimEnd() === heading);
+    if (start === -1) continue;
+    const level = heading.match(/^#+/)[0].length;
+    const next = lines.findIndex((l, i) => i > start
+      && (new RegExp(`^#{1,${level}} `).test(l) || (until !== undefined && l.trimEnd() === until)));
+    lines.splice(start, (next === -1 ? lines.length : next) - start);
+  }
+  lines = lines.filter(l => !TOOL_LINES.some(p => l.startsWith(p)));
+  lines = lines.map(l => (l.startsWith(READ_CV_RULE) ? `${READ_CV_RULE} Take them from the CV below.` : l));
+  return lines.join('\n');
+}
+
+export function buildSystemPrompt(modeContent, ctx, { evaluate = false } = {}) {
   const languageInstruction = outputLanguageInstruction(parseOutputLanguage(ctx.profile));
   return [
-    ctx.shared,
+    noToolsNote(evaluate),
+    stripToolInstructions(ctx.shared),
     ctx.profileMode,
-    modeContent,
+    stripToolInstructions(modeContent),
     '---',
     'CANDIDATE PROFILE (YAML):',
     ctx.profile,
@@ -464,8 +519,10 @@ function assertSafeRemoteUrl(url) {
 }
 
 // Verdicts from the liveness check that mean the page is not an open posting
-// that can be read: besides any `expired` one (404, nav/footer text only, a
-// closed or listing page), a bot wall or a redirect away from the posting.
+// that can be read: besides any `expired` one (404, a closed or listing page),
+// a page too short to read (isUnreadableVerdict: nav/footer only, or not
+// rendered yet, which classifyLiveness reports as `uncertain`), a bot wall or
+// a redirect away from the posting.
 const UNREADABLE_PAGE_CODES = new Set(['bot_challenge', 'redirected_off_posting']);
 
 // Why a fetched page holds no job description to evaluate, or null when it
@@ -475,7 +532,7 @@ const UNREADABLE_PAGE_CODES = new Set(['bot_challenge', 'redirected_off_posting'
 export function unreadableJobPage({ status = 0, requestedUrl = '', finalUrl = '', text = '' } = {}) {
   if (status >= 400) return `HTTP ${status}`;
   const verdict = classifyLiveness({ status, requestedUrl, finalUrl, bodyText: text });
-  if (verdict.result === 'expired' || UNREADABLE_PAGE_CODES.has(verdict.code)) {
+  if (verdict.result === 'expired' || isUnreadableVerdict(verdict) || UNREADABLE_PAGE_CODES.has(verdict.code)) {
     return `${verdict.code}: ${verdict.reason}`;
   }
   return null;
@@ -749,7 +806,7 @@ async function cmdEvaluate(input, ctx) {
   }
 
   console.log('\nEvaluating...');
-  const systemPrompt = buildSystemPrompt(modeContent, ctx);
+    const systemPrompt = buildSystemPrompt(modeContent, ctx, { evaluate: true });
 
   let resultObj;
   try {

@@ -37,7 +37,7 @@
 
 import { DEFAULT_USER_AGENT } from './user-agent.mjs';
 import { parseWwrFeed } from './providers/weworkremotely.mjs';
-import { isZohoRecordClosed, parseZohoDetailPage } from './providers/zoho-recruit.mjs';
+import { ZOHO_HOST_RE, isZohoRecordClosed, parseZohoDetailPage } from './providers/zoho-recruit.mjs';
 import { VEJ_KEY_MONITOR } from './providers/vdab.mjs';
 import { atsVendorOf } from './ats-vendor.mjs';
 import { linkedInJobId, linkedInGuestUrl } from './lib/linkedin-url.mjs';
@@ -156,9 +156,9 @@ const ATS_PROVIDERS = [
     },
     api: ({ account, shortcode }) => `https://apply.workable.com/api/v2/accounts/${account}/jobs/${shortcode}`,
     // Workable's posting pages render client-side, so the browser rung reads a
-    // not-yet-painted live posting as nav/footer only (insufficient_content) and
-    // reports it expired, the costly direction: scan --verify writes that to
-    // scan-history as skipped. The v2 JSON endpoint is per-job and needs no
+    // not-yet-painted live posting as nav/footer only (insufficient_content),
+    // which used to read as expired, the costly direction: scan --verify wrote
+    // that to scan-history as skipped. The v2 JSON endpoint is per-job and needs no
     // browser. Measured live (#5000): 200 with state "published" is the live
     // shape and 404 ("Job not found") is the removed shape, so a 404 is
     // authoritative here and any other readable state stays uncertain.
@@ -288,18 +288,18 @@ const ATS_PROVIDERS = [
   },
   {
     id: 'zoho-recruit',
-    // {tenant}.zohorecruit.com/jobs/{portal}/{id}[/{slug}]. Zoho Recruit has no
+    // {tenant}.zohorecruit.<regional tld>/jobs/{portal}/{id}[/{slug}]. Zoho Recruit has no
     // JSON endpoint; the posting page itself embeds the record (see
     // providers/zoho-recruit.mjs), so `api` is that page and `interpret` reads
     // it. Zoho answers 200 for a removed posting too, so liveness comes from
     // the body, never from the status.
     match(u) {
-      const host = u.hostname.match(/^([a-z0-9][a-z0-9-]*)\.zohorecruit\.com$/);
+      const host = u.hostname.match(ZOHO_HOST_RE);
       if (!host) return null;
       const m = u.pathname.match(/^\/jobs\/([^/]+)\/(\d+)(?:\/[^/]*)?\/?$/);
-      return m ? { tenant: host[1], portal: m[1], id: m[2] } : null;
+      return m ? { tenant: host[1], host: u.hostname, portal: m[1], id: m[2] } : null;
     },
-    api: ({ tenant, portal, id }) => `https://${tenant}.zohorecruit.com/jobs/${portal}/${id}`,
+    api: ({ host, portal, id }) => `https://${host}/jobs/${portal}/${id}`,
     accept: 'text/html',
     async interpret(res, { id }) {
       let html;

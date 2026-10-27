@@ -330,9 +330,10 @@ async function main() {
   }
 
   if (discardExpired) {
-    // Only closure EVIDENCE closes a row. An `insufficient_content` verdict is
-    // `expired` too, but it means the page could not be read, and this path
-    // writes Discarded to the tracker — see isClosureEvidence().
+    // Only closure EVIDENCE closes a row. An `insufficient_content` verdict
+    // means the page could not be read, whether it arrives as `uncertain` or,
+    // from an older verdict, as `expired`, and this path writes Discarded to
+    // the tracker — see isClosureEvidence().
     const { closed: expiredUrls, unreadable } = discardableExpiredUrls(verdicts);
     if (unreadable.length > 0) {
       console.log(`\nDiscard expired: ${unreadable.length} page(s) could not be read and were left as they are `

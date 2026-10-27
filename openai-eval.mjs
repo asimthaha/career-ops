@@ -30,6 +30,7 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { TSV_ADDITION_HEADER } from './tracker-parse.mjs';
@@ -39,6 +40,7 @@ import {
 } from './reserve-report-num.mjs';
 import { TokenAccumulator, formatBreakdown, normalizeOpenAIUsage } from './utils/token-tracker.mjs';
 import { buildBudgetedPrompt } from './lib/context-budget.mjs';
+import { endpointHeaders } from './lib/endpoint-headers.mjs';
 import { assertLlmRequestAllowed } from './lib/llm-outbound.mjs';
 import { installPiiInterceptor } from './lib/pii-interceptor.mjs';
 import {
@@ -349,8 +351,17 @@ if (Number.isNaN(timeoutMs) || timeoutMs <= 0) {
 console.log(`\n🔒  Privacy: your cv.md + JD will be sent to ${endpointHost}.`);
 console.log(`🤖  Calling ${modelName} via ${endpointHost}... this may take a minute.\n`);
 
+// One evaluation is one conversation: a single id for every request in this run.
+const SESSION_ID = randomUUID();
+// VERSION may carry a release-please marker ("1.38.0 # x-release-please-version").
+let careerOpsVersion;
+try { careerOpsVersion = readFileSync(join(ROOT, 'VERSION'), 'utf-8').trim().split(/\s+/)[0] || undefined; } catch { /* default User-Agent version */ }
+
 const headers = { 'Content-Type': 'application/json' };
 if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+// OpenCode Go asks for a session id and an own user agent (observed: HTTP 400 MissingSessionID without it):
+// https://opencode.ai/v2/docs/console/go/#where-can-i-use-it
+Object.assign(headers, endpointHeaders(endpointHost, SESSION_ID, careerOpsVersion));
 
 let evaluationText;
 try {

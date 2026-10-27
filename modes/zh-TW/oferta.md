@@ -305,11 +305,18 @@
 ## ATS 關鍵字擷取
 (列出 15–20 個從該 JD 中擷取的高頻核心技術／業務關鍵字，用於履歷最佳化)
 
+## Keyword Coverage
+（由 `node keyword-match.mjs <report>` 產生——覆蓋率 %、present、thin、missing）
+
 ## Job Description (archived verbatim)
 （職缺描述全文，逐字貼上——見下方要求）
 ```
 
 **JD 存檔（必要，#2789）：** 每份報告都必須包含 `## Job Description (archived verbatim)` 一節，原樣貼上職缺描述全文，不得摘要或改寫。該標題維持英文，因為 `check-jd-archive.mjs` 依名稱尋找它。`**URL:**` 不是存檔：職缺關閉後連結就會失效，原始要求也再也找不回來。該節第一行寫來源上可見的刊登日期（`Posted: {日期或頁面上顯示的相對時間}`，確實沒有時寫 `Posted: not visible in source`），不要用報告檔案本身的時間代替。若 JD 過長或無法完整引用，用 `archive-posting.mjs <url> --company={company-slug} --report={num}` 存檔，並在該節中**只**寫這一句：`See jds/{filename} for the full archive (archive-posting.mjs --report={num}).`。不得以改寫代替原文；完整規則見 `modes/oferta.md` 的 **JD archival**。
+
+### 1b. 嵌入 ATS 關鍵字覆蓋率
+
+儲存報告後執行 `node keyword-match.mjs reports/{###}-{company-slug}-{YYYY-MM-DD}.md`，把 `## Keyword Coverage` 區塊貼在 ATS 關鍵字擷取之下（標題維持英文）。僅供診斷：只有當關鍵字反映真實經驗時才補充。
 
 ### 2. 登錄到 Tracker 紀錄簿
 

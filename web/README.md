@@ -11,7 +11,7 @@ database, no server. If you never run it, nothing about your CLI workflow change
 
 ## Quick start
 
-Requires Node 22.6+ (see [Tests](#tests) — `npm test` needs glob discovery, and `--experimental-strip-types` for the suites that import `.ts` modules directly; the flag landed in 22.6.0).
+Requires Node 22.13+ (or 23.4+ on the 23.x line), the same floor as the rest of career-ops. `npm test` runs with `--experimental-strip-types` (see [Tests](#tests)) because some suites import `.ts` modules directly, and Node strips types by default only from 22.18.
 
 ```bash
 cd web
@@ -233,10 +233,11 @@ Root-level scripts are the one exception: `server.mjs` is tested by
 only `web/tests/lib/` and a suite outside it would never run in the required check.
 
 `npm test` discovers them with a glob (`tests/**/*.test.mjs`), so a new suite
-needs **no registration** — just add the file. **Requires Node ≥ 22**: earlier
-versions don't expand CLI globs for `node --test`, so `npm test` prints
-`Could not find '…'`, runs nothing and exits 1. Hence `engines.node` in
-`web/package.json` — a higher floor than `next` itself asks for.
+needs **no registration** — just add the file. Glob discovery needs Node ≥ 22:
+earlier versions don't expand CLI globs for `node --test`, so `npm test` prints
+`Could not find '…'`, runs nothing and exits 1. `engines.node` in
+`web/package.json` sits higher still, at the project range (`^22.13.0 || >=23.4.0`,
+`NODE_ENGINES` in `lib/node-floor.mjs`), and well above what `next` itself asks for.
 
 Three constraints follow from all this:
 

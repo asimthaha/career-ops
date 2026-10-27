@@ -3716,6 +3716,38 @@ export async function appendPortalHealth(healthRecords, filePath = PORTAL_HEALTH
   });
 }
 
+/**
+ * Apply an entry's `max_response_mb` to the ctx a provider fetches with.
+ *
+ * fetchJson / fetchText / fetchResponse refuse a body over
+ * DEFAULT_MAX_BODY_BYTES (_http.mjs) unless the call passes `maxBytes`. A
+ * board that is legitimately bigger sets `max_response_mb` on its own
+ * portals.yml entry; the setting is the user's, so it wins over a `maxBytes`
+ * the provider passes, and every other entry keeps the default. An entry
+ * without the key leaves the ctx as it is. So does a value that is not a YAML
+ * number (a quoted string, a boolean, a list) or that does not come to a whole
+ * positive finite byte count, with a warning naming the entry.
+ *
+ * @param {object} ctx - The per-entry ctx; its fetchers are replaced in place.
+ * @param {{ name?: string, max_response_mb?: unknown }} entry
+ * @returns {object} The same ctx.
+ */
+export function applyEntryResponseCap(ctx, entry) {
+  const raw = entry?.max_response_mb;
+  if (raw === undefined || raw === null) return ctx;
+  const maxBytes = typeof raw === 'number' ? Math.floor(raw * 1024 * 1024) : NaN;
+  if (!Number.isFinite(maxBytes) || maxBytes < 1) {
+    console.error(`⚠️  ${entry?.name}: max_response_mb must be a positive number, got ${JSON.stringify(raw)} — ignored`);
+    return ctx;
+  }
+  for (const method of ['fetchJson', 'fetchText', 'fetchResponse']) {
+    const original = ctx[method];
+    if (typeof original !== 'function') continue;
+    ctx[method] = (url, opts = {}) => original(url, { ...opts, maxBytes });
+  }
+  return ctx;
+}
+
 export function loadPortalHealth(filePath = PORTAL_HEALTH_PATH) {
   if (!existsSync(filePath)) return [];
   const lines = readFileSync(filePath, 'utf-8').split('\n');
@@ -3853,10 +3885,12 @@ export async function verifyOffers(offers, { headedFallback = false, throttleBas
     : checkUrlLiveness(page, url);
 
   // Two permanent buckets, one observational, one transient passthrough:
-  //   verified  → active pages and transient nav errors (retry next scan)
+  //   verified  → active pages, transient nav errors and a still-empty page
+  //               (empty_page)
   //   expired   → classifier-confirmed dead postings (HTTP 4xx, redirect markers,
-  //               body patterns, listing pages, insufficient content)
-  //   dropped   → page loaded but classifier saw no Apply control. --verify is an
+  //               body patterns, listing pages)
+  //   dropped   → page loaded but classifier saw no Apply control, including a
+  //               page too short to read (insufficient_content). --verify is an
   //               opt-in stricter filter; keeping these defeats the purpose. Not
   //               proof the posting is closed, so the row never pins the URL and
   //               the next --verify scan loads the page again (#4832).
@@ -3915,8 +3949,9 @@ export async function verifyOffers(offers, { headedFallback = false, throttleBas
         // with a precise status, dedup-blocking them on subsequent scans.
         invalid.push({ ...offer, code, reason });
         console.log(`  ⛔ invalid   ${offer.company} | ${offer.title} (${reason})`);
-      } else if (result === 'uncertain' && code === 'no_apply_control') {
-        // Page loaded but classifier could not find an Apply control. Drop from
+      } else if (result === 'uncertain' && (code === 'no_apply_control' || code === 'insufficient_content')) {
+        // Page loaded but classifier could not find an Apply control (or too
+        // little text to hold one: insufficient_content). Drop from
         // pipeline and record in scan-history for visibility only: the row does
         // not pin the URL (OBSERVATIONAL_SCAN_HISTORY_STATUSES), so the next
         // --verify scan checks it again rather than losing a live posting whose
@@ -4408,6 +4443,7 @@ async function main() {
       ...(normalizeFilterOn(company.filter_on).includes('title') ? { titleWanted: (title) => titleFilter(title) } : {}),
       idCache: idCaches.forProvider(provider.id),
     };
+    applyEntryResponseCap(ctx, company);
     let sourceName = provider.id === 'local-parser' ? 'local-parser' : `${provider.id}-api`;
     try {
       let jobs;

@@ -430,6 +430,9 @@ Guardar la evaluación completa en `reports/{###}-{company-slug}-{YYYY-MM-DD}.md
 ## Palabras clave extraídas
 (lista de 15-20 palabras clave de la oferta para optimización ATS)
 
+## Keyword Coverage
+(generado por `node keyword-match.mjs <report>` — cobertura en %, present, thin, missing)
+
 ## Job Description (archived verbatim)
 (el texto completo de la oferta, pegado tal cual — ver el requisito más abajo)
 ```
@@ -437,6 +440,10 @@ Guardar la evaluación completa en `reports/{###}-{company-slug}-{YYYY-MM-DD}.md
 **Archivo de la JD (obligatorio, #2789):** todo report DEBE llevar una sección `## Job Description (archived verbatim)` con el texto completo de la oferta pegado tal cual, nunca resumido ni parafraseado. El encabezado se queda en inglés: `check-jd-archive.mjs` lo busca por su nombre. Un `**URL:**` no es un archivo: deja de funcionar cuando la oferta se cierra, y entonces ya no hay forma de recuperar los requisitos originales. La primera línea de la sección es la fecha de publicación tal como se ve en la fuente (`Posted: {fecha o texto relativo}`, o `Posted: not visible in source`), nunca la fecha del archivo del report. Si la JD es muy larga o no se puede citar entera, capturarla con `archive-posting.mjs <url> --company={company-slug} --report={num}` y poner en la sección **exactamente** `See jds/{filename} for the full archive (archive-posting.mjs --report={num}).`, sin más texto. Nunca una paráfrasis en su lugar; la regla completa está en `modes/oferta.md` (**JD archival**).
 
 **Machine Summary (obligatorio):** YAML fence después del encabezado — mismo schema y reglas que `batch/batch-prompt.md` (fuente de verdad). Incluye `advertised_comp` (cifra textual de la JD o `null`), `risk_summary` (mapa), y `requirement_importance` (tabla del Bloque B fila por fila; tope `inferred` de la puerta se mantiene).
+
+### 1b. Insertar la cobertura de keywords ATS
+
+Tras guardar el report, ejecutar `node keyword-match.mjs reports/{###}-{company-slug}-{YYYY-MM-DD}.md` y pegar el bloque `## Keyword Coverage` debajo de las palabras clave extraídas (el encabezado se queda en inglés). Solo diagnóstico: añadir una keyword solo si refleja experiencia real.
 
 ### 2. Registrar en el tracker
 

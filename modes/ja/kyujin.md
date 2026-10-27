@@ -340,11 +340,18 @@ Full evaluation を `reports/{###}-{company-slug}-{YYYY-MM-DD}.md` に保存す�
 ## Keywords extracted
 (list of 15-20 keywords from the JD for ATS optimization)
 
+## Keyword Coverage
+(`node keyword-match.mjs <report>` が生成 — coverage %、present、thin、missing)
+
 ## Job Description (archived verbatim)
 (posting の全文を verbatim で貼る — 下の要件を参照)
 ```
 
 **JD archival（必須、#2789）：** すべての report に `## Job Description (archived verbatim)` section を入れ、posting の全文をそのまま貼る。要約・言い換えはしない。見出しは英語のまま：`check-jd-archive.mjs` が名前で探す。`**URL:**` は archive ではない：posting が閉じると link は切れ、元の要件はもう取り戻せない。Section の 1 行目は source に表示されている掲載日（`Posted: {日付または表示どおりの相対表記}`、本当に無いときは `Posted: not visible in source`）で、report file 自体の日時で代用しない。JD が長すぎる、または全文を引用できないときは `archive-posting.mjs <url> --company={company-slug} --report={num}` で capture し、section には `See jds/{filename} for the full archive (archive-posting.mjs --report={num}).` の一文**だけ**を書く。言い換えで代用しない。Rule 全体は `modes/oferta.md` の **JD archival** を参照。
+
+### 1b. ATS keyword coverage を埋め込む
+
+Report を保存したら `node keyword-match.mjs reports/{###}-{company-slug}-{YYYY-MM-DD}.md` を実行し、`## Keyword Coverage` block を `## Keywords extracted` の下に貼る（見出しは英語のまま）。診断用のみ：keyword は実際の経験を反映する場合だけ追加する。
 
 ### 2. Record in tracker
 

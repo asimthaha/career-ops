@@ -801,14 +801,16 @@ import { readFileSync as readLivenessSource } from 'node:fs';
 import { fileURLToPath as toLivenessPath } from 'node:url';
 
 // The premise, asserted rather than assumed: a REAL unreadable verdict from the
-// classifier is `expired`, which is exactly why `expired` alone cannot gate a
-// write.
-unreadableProbe.result === 'expired'
-  ? pass('premise: classifyLiveness() reports an unreadable page as expired')
-  : fail(`premise failed: an unreadable page classified as ${unreadableProbe.result}, not expired`);
+// classifier is `uncertain`. An older or hand-built verdict can still carry the
+// same code as `expired`, which is why `expired` alone cannot gate a write.
+unreadableProbe.result === 'uncertain'
+  ? pass('premise: classifyLiveness() reports an unreadable page as uncertain')
+  : fail(`premise failed: an unreadable page classified as ${unreadableProbe.result}, not uncertain`);
+const legacyUnreadable = { result: 'expired', code: 'insufficient_content' };
 
 isClosureEvidence({ result: 'expired', code: 'hard_expired' }) === true
   && isClosureEvidence(unreadableProbe) === false
+  && isClosureEvidence(legacyUnreadable) === false
   && isClosureEvidence({ result: 'uncertain', code: 'bot_challenge' }) === false
   && isClosureEvidence({ result: 'active' }) === false
   && isClosureEvidence(null) === false
@@ -819,6 +821,7 @@ isClosureEvidence({ result: 'expired', code: 'hard_expired' }) === true
   const { closed, unreadable } = discardableExpiredUrls([
     { url: 'https://jobs.example.com/closed', result: 'expired', code: 'hard_expired' },
     { ...unreadableProbe, url: 'https://jobs.example.com/still-loading' },
+    { ...legacyUnreadable, url: 'https://jobs.example.com/old-verdict' },
     { url: 'https://jobs.example.com/live', result: 'active' },
     { url: 'https://jobs.example.com/wall', result: 'uncertain', code: 'bot_challenge' },
     { result: 'expired', code: 'hard_expired' },          // no url: nothing to discard
@@ -826,8 +829,8 @@ isClosureEvidence({ result: 'expired', code: 'hard_expired' }) === true
   JSON.stringify(closed) === JSON.stringify(['https://jobs.example.com/closed'])
     ? pass('--discard-expired closes only the posting with closure evidence')
     : fail(`--discard-expired would close ${JSON.stringify(closed)} — an unreadable page must not be among them`);
-  JSON.stringify(unreadable) === JSON.stringify(['https://jobs.example.com/still-loading'])
-    ? pass('the unreadable page is reported, not silently dropped')
+  JSON.stringify(unreadable) === JSON.stringify(['https://jobs.example.com/still-loading', 'https://jobs.example.com/old-verdict'])
+    ? pass('unreadable pages are reported, uncertain or expired, not silently dropped')
     : fail(`unreadable pages not reported correctly: ${JSON.stringify(unreadable)}`);
 }
 
