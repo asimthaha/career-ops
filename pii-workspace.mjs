@@ -207,6 +207,7 @@ async function main() {
       timeoutMs: 10_000,
       retryMs: 50,
       staleMs: 30_000,
+      createParent: true,
     });
   }
 
