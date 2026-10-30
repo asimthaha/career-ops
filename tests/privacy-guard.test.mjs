@@ -694,6 +694,37 @@ test('12d. rehydration restores the configured spelling', async () => {
   assert.ok((await response.text()).includes(FAKE.name), 'restores "Jordan A. Placeholder"');
 });
 
+test('12e. redact mode scrubs JSON-escaped values and response.json restores valid JSON', async () => {
+  const quotedName = 'Jordan "JD" Placeholder';
+  const guard = new PrivacyGuard({ values: [quotedName] });
+  let sentBody = null;
+  const mockFetch = async (input, init) => {
+    sentBody = init?.body;
+    return {
+      ok: true,
+      text: async () => `{"echo": "${sentBody.match(/\{\{PRIVACY_REDACTED_\d+\}\}/)[0]}"}`,
+      json: async () => ({}),
+    };
+  };
+
+  const redacting = wrapFetch(mockFetch, { guard, redact: true });
+  const response = await redacting('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    body: JSON.stringify({ candidate: quotedName }),
+  });
+
+  assert.match(sentBody, /PRIVACY_REDACTED_/);
+  assert.ok(!sentBody.includes('Jordan \\"JD\\" Placeholder'));
+
+  // response.json() parses successfully without syntax errors from unescaped quotes
+  const parsed = await response.json();
+  assert.equal(parsed.echo, quotedName);
+
+  // response.text() restores the raw value
+  const rawText = await response.text();
+  assert.ok(rawText.includes(quotedName));
+});
+
 // ---------------------------------------------------------------------------
 // Config loading: the shape the user actually writes.
 // ---------------------------------------------------------------------------
