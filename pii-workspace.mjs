@@ -143,23 +143,23 @@ function scrub(text, guard, map) {
 function rehydrate(text, map) {
   if (!map || Object.keys(map).length === 0) return text;
 
-  // Match complete PRIVACY_VALUE tokens in a single replacement pass and look up
-  // each exact matched token, ensuring restoring a shorter token (e.g. PRIVACY_VALUE_1)
-  // cannot alter a longer one (e.g. PRIVACY_VALUE_10).
-  let out = text.replace(/PRIVACY_VALUE_\d+/g, (matched) => {
-    return Object.prototype.hasOwnProperty.call(map, matched) ? map[matched] : matched;
-  });
-
-  // Also handle any non-standard/legacy tokens in descending length order
+  // Match complete numeric tokens (PRIVACY_VALUE_\d+) and legacy tokens in a
+  // single replacement pass over the original text, looking up each exact match
+  // in map. Descending length order for legacy tokens prevents shorter tokens
+  // corrupting longer ones, and a single pass ensures inserted values are not
+  // processed again.
   const extraTokens = Object.keys(map)
     .filter((k) => !/^PRIVACY_VALUE_\d+$/.test(k))
     .sort((a, b) => b.length - a.length);
 
-  for (const token of extraTokens) {
-    out = out.split(token).join(map[token]);
-  }
+  const pattern = new RegExp(
+    [...extraTokens.map(escapeRe), 'PRIVACY_VALUE_\\d+'].join('|'),
+    'g'
+  );
 
-  return out;
+  return text.replace(pattern, (matched) => {
+    return Object.prototype.hasOwnProperty.call(map, matched) ? map[matched] : matched;
+  });
 }
 
 function main() {

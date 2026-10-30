@@ -76,10 +76,27 @@ test('rehydrate handles legacy tokens in descending length order', () => {
   assert.doesNotMatch(restored, /short_val_EXTRA/);
 });
 
+test('rehydrate matches numeric and legacy tokens in a single pass without re-processing inserted values', () => {
+  const map = {
+    TOKEN_A: 'value with TOKEN_B inside',
+    TOKEN_B: 'replaced_val',
+    PRIVACY_VALUE_1: 'value with PRIVACY_VALUE_2 inside',
+    PRIVACY_VALUE_2: 'another_val',
+  };
+
+  const input = 'Test: TOKEN_A and PRIVACY_VALUE_1.';
+  const restored = rehydrate(input, map);
+
+  assert.equal(restored, 'Test: value with TOKEN_B inside and value with PRIVACY_VALUE_2 inside.');
+  assert.doesNotMatch(restored, /replaced_val/);
+  assert.doesNotMatch(restored, /another_val/);
+});
+
 test('atomicWriteFileSync writes atomically and preserves file mode', () => {
   withTempDir((dir) => {
     const target = path.join(dir, 'test.txt');
     fs.writeFileSync(target, 'initial', { mode: 0o644 });
+    const expectedMode = fs.statSync(target).mode & 0o777;
 
     atomicWriteFileSync(target, 'updated', 'utf8');
     assert.equal(fs.readFileSync(target, 'utf8'), 'updated');
@@ -87,20 +104,29 @@ test('atomicWriteFileSync writes atomically and preserves file mode', () => {
     // On non-Windows platforms verify mode preservation
     if (process.platform !== 'win32') {
       const mode = fs.statSync(target).mode & 0o777;
-      assert.equal(mode, 0o644);
+      assert.equal(mode, expectedMode);
     }
+  });
+});
+
+test('atomicWriteFileSync cleans up temporary file on successful write', () => {
+  withTempDir((dir) => {
+    const target = path.join(dir, 'test.txt');
+    atomicWriteFileSync(target, 'hello', 'utf8');
+    assert.equal(fs.readFileSync(target, 'utf8'), 'hello');
+    const tempFiles = fs.readdirSync(dir).filter((f) => f.startsWith('.tmp-'));
+    assert.equal(tempFiles.length, 0, 'no temporary files left after success');
   });
 });
 
 test('atomicWriteFileSync cleans up temporary file if write fails', () => {
   withTempDir((dir) => {
-    const invalidTarget = path.join(dir, 'nonexistent-sub', 'file.txt');
-    // Calling without recursive mkdir will throw or testing invalid temp
-    const target = path.join(dir, 'test.txt');
+    // Pointing target to an existing directory forces renameSync to fail (EISDIR / EPERM)
+    const target = path.join(dir, 'dir_as_target');
+    fs.mkdirSync(target);
 
-    // Verify temp files are cleaned up
-    atomicWriteFileSync(target, 'hello', 'utf8');
+    assert.throws(() => atomicWriteFileSync(target, 'hello', 'utf8'));
     const tempFiles = fs.readdirSync(dir).filter((f) => f.startsWith('.tmp-'));
-    assert.equal(tempFiles.length, 0, 'no temporary files left after success');
+    assert.equal(tempFiles.length, 0, 'no temporary files left after failed write');
   });
 });
