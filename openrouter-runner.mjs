@@ -385,7 +385,7 @@ async function callOpenRouter(systemPrompt, userMessage) {
       return { content, usage };
 
     } catch (e) {
-      if (e?.code === 'PRIVACY_GUARD_BLOCKED') throw e;
+      if (e?.code === 'PRIVACY_GUARD_BLOCKED' || e?.code === 'PRIVACY_GUARD_CONFIG') throw e;
       lastError = e;
       const msg = e.message.split('\n')[0];
 
