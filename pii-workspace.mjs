@@ -63,15 +63,25 @@ function loadTokenMap() {
 }
 
 function atomicWriteFileSync(targetPath, content, options = {}) {
-  const dir = path.dirname(targetPath);
+  let resolvedTarget = targetPath;
+  try {
+    const stat = fs.lstatSync(targetPath);
+    if (stat.isSymbolicLink()) {
+      resolvedTarget = fs.realpathSync(targetPath);
+    }
+  } catch {
+    /* ignore if target does not exist or lstat/realpath fails */
+  }
+
+  const dir = path.dirname(resolvedTarget);
   fs.mkdirSync(dir, { recursive: true });
 
   const opts = typeof options === 'string' ? { encoding: options } : { ...options };
 
   let mode = opts.mode;
-  if (mode === undefined && fs.existsSync(targetPath)) {
+  if (mode === undefined && fs.existsSync(resolvedTarget)) {
     try {
-      mode = fs.statSync(targetPath).mode & 0o777;
+      mode = fs.statSync(resolvedTarget).mode & 0o777;
     } catch {
       /* ignore */
     }
@@ -82,7 +92,7 @@ function atomicWriteFileSync(targetPath, content, options = {}) {
 
   const tempPath = path.join(
     dir,
-    `.tmp-${path.basename(targetPath)}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    `.tmp-${path.basename(resolvedTarget)}-${Date.now()}-${Math.random().toString(36).slice(2)}`
   );
   let renamed = false;
   try {
@@ -92,7 +102,7 @@ function atomicWriteFileSync(targetPath, content, options = {}) {
     } catch {
       /* on Windows chmod is limited, ignore chmod failures */
     }
-    fs.renameSync(tempPath, targetPath);
+    fs.renameSync(tempPath, resolvedTarget);
     renamed = true;
   } finally {
     if (!renamed) {

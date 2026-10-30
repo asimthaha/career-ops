@@ -163,3 +163,22 @@ test('atomicWriteFileSync cleans up temporary file if write fails', () => {
     assert.equal(tempFiles.length, 0, 'no temporary files left after failed write');
   });
 });
+
+test('atomicWriteFileSync preserves symlink target and updates destination', (t) => {
+  withTempDir((dir) => {
+    const realTarget = path.join(dir, 'real.txt');
+    const symlinkTarget = path.join(dir, 'symlink.txt');
+    fs.writeFileSync(realTarget, 'original content', 'utf8');
+    try {
+      fs.symlinkSync(realTarget, symlinkTarget);
+    } catch {
+      t.skip('symlinks not supported on this platform/privilege level');
+      return;
+    }
+
+    atomicWriteFileSync(symlinkTarget, 'updated content', 'utf8');
+    assert.equal(fs.readFileSync(realTarget, 'utf8'), 'updated content');
+    assert.equal(fs.lstatSync(symlinkTarget).isSymbolicLink(), true);
+  });
+});
+
