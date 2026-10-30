@@ -84,6 +84,17 @@ test('1. a configured value in a request is blocked, and the request is not rewr
   assert.ok(body.includes(FAKE.name), 'the caller still holds the original body');
 });
 
+test('1b. configured text containing quotes is detected when JSON-escaped in serialized payload', () => {
+  const guard = new PrivacyGuard({
+    values: ['Jordan "JD" Placeholder'],
+  });
+  const body = JSON.stringify({
+    messages: [{ role: 'user', content: 'Candidate nickname is Jordan "JD" Placeholder' }],
+  });
+  assert.ok(body.includes('Jordan \\"JD\\" Placeholder'), 'payload is JSON-escaped');
+  assert.throws(() => guard.assertSafe(body), PrivacyGuardError);
+});
+
 // ---------------------------------------------------------------------------
 // 2. Ordinary professional information is allowed (no false blocks).
 // ---------------------------------------------------------------------------
