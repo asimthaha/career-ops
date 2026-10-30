@@ -3584,8 +3584,10 @@ const exactAllowedFiles = new Set([
   "README.id.md",
   // GitHub Sponsors funding target + Codex plugin manifest (#4131) — same
   // maintainer-credit shape as the .claude-plugin/.github/plugin ones above.
-  "funding.json",
-  ".codex-plugin/plugin.json",
+  'funding.json', '.codex-plugin/plugin.json',
+  // The OpenAI plugin directory listing names its developer, like the
+  // claude-directory manifest that '.claude-plugin/plugin.json' above covers.
+  'openai-directory/plugin.json',
   // Hired Wall: celebrates a hire with a link back to the project, and the
   // scripts/tests that build and cover that feature necessarily carry the
   // same URL (#4131).
