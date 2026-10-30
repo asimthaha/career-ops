@@ -398,6 +398,12 @@ test('9c. a Buffer body is scanned as text, not as a byte array', () => {
     PrivacyGuardError,
     'Uint8Array'
   );
+  const nameBuf = Buffer.from(FAKE.name.length % 2 === 0 ? FAKE.name : `${FAKE.name} `);
+  assert.throws(
+    () => guard.assertSafe(new Uint16Array(nameBuf.buffer, nameBuf.byteOffset, nameBuf.byteLength / 2)),
+    PrivacyGuardError,
+    'Uint16Array'
+  );
 
   // And a clean Buffer still passes, so this is not a false-positive machine.
   assert.equal(guard.assertSafe(Buffer.from('an ordinary job posting')), true);
