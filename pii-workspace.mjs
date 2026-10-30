@@ -37,6 +37,7 @@ import {
 } from './lib/privacy-guard.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
+import { acquireDirLock, releaseOrWarn } from './lib/dir-lock.mjs';
 
 const USER_FILES = ['cv.md', 'config/profile.yml', 'modes/_profile.md'];
 const TOKEN_MAP_NAME = '.pii-token-map.json';
@@ -162,7 +163,7 @@ function rehydrate(text, map) {
   });
 }
 
-function main() {
+async function main() {
   const mode = process.argv[2]; // 'scrub' | 'restore' | 'status'
 
   if (!mode || !['scrub', 'restore', 'status'].includes(mode)) {
@@ -185,52 +186,72 @@ function main() {
 
     // Use an empty env so scrub mode is never disabled by an outbound LLM bypass.
     guard = loadPrivacyGuard({ config, env: {} });
-    if (guard.textValues.size === 0) {
+    const numericCount = (guard.digitStrings?.size ?? 0) + (guard.digitRuns?.size ?? 0);
+    const textCount = guard.textValues?.size ?? 0;
+    if (textCount === 0 && numericCount === 0) {
       console.error(
-        `[privacy] No guardable text values loaded. Check config/privacy.yml (minimum text length: 5 characters).`
+        `[privacy] No guardable values loaded. Check config/privacy.yml (minimum text length: 5 characters, 5 digits).`
       );
       process.exit(1);
     }
-  }
-
-  const map = loadTokenMap();
-
-  for (const file of USER_FILES) {
-    const filePath = path.join(root, file);
-    if (!fs.existsSync(filePath)) continue;
-    const content = fs.readFileSync(filePath, 'utf8');
-
-    if (mode === 'scrub') {
-      const scrubbed = scrub(content, guard, map);
-      if (scrubbed !== content) {
-        // Persist the token map immediately before each rewritten file loses its real values.
-        saveTokenMap(map);
-        atomicWriteFileSync(filePath, scrubbed, 'utf8');
-      }
-      console.log(`[privacy] ${file}: tokenized (${Object.keys(map).length} token(s) mapped)`);
-    } else if (mode === 'restore') {
-      const restored = rehydrate(content, map);
-      if (restored !== content) atomicWriteFileSync(filePath, restored, 'utf8');
-      const unresolved = restored.match(/PRIVACY_VALUE_\d+/g);
-      if (unresolved && unresolved.length > 0) {
-        const unique = [...new Set(unresolved)];
-        console.warn(
-          `[privacy] WARNING: ${file} still contains ${unique.length} unresolved token(s): ${unique.join(', ')}`
-        );
-      } else {
-        console.log(`[privacy] ${file}: real values restored`);
-      }
-    } else {
-      const hasTokens = /PRIVACY_VALUE_|PRIVACY_REDACTED_|CANDIDATE_/.test(content);
-      console.log(`[privacy] ${file}: ${hasTokens ? 'contains tokens' : 'no tokens detected'}`);
+    if (numericCount > 0) {
+      console.warn(
+        `[privacy] WARNING: ${numericCount} configured numeric value(s) cannot be tokenized and remain readable.`
+      );
     }
   }
 
-  if (mode === 'scrub' && Object.keys(map).length > 0) saveTokenMap(map);
+  let lock = null;
+  if (mode === 'scrub' || mode === 'restore') {
+    lock = await acquireDirLock(`${tokenMapPath}.lock`, {
+      timeoutMs: 10_000,
+      retryMs: 50,
+      staleMs: 30_000,
+    });
+  }
+
+  try {
+    const map = loadTokenMap();
+
+    for (const file of USER_FILES) {
+      const filePath = path.join(root, file);
+      if (!fs.existsSync(filePath)) continue;
+      const content = fs.readFileSync(filePath, 'utf8');
+
+      if (mode === 'scrub') {
+        const scrubbed = scrub(content, guard, map);
+        if (scrubbed !== content) {
+          // Persist the token map immediately before each rewritten file loses its real values.
+          saveTokenMap(map);
+          atomicWriteFileSync(filePath, scrubbed, 'utf8');
+        }
+        console.log(`[privacy] ${file}: tokenized (${Object.keys(map).length} token(s) mapped)`);
+      } else if (mode === 'restore') {
+        const restored = rehydrate(content, map);
+        if (restored !== content) atomicWriteFileSync(filePath, restored, 'utf8');
+        const unresolved = restored.match(/PRIVACY_VALUE_\d+/g);
+        if (unresolved && unresolved.length > 0) {
+          const unique = [...new Set(unresolved)];
+          console.warn(
+            `[privacy] WARNING: ${file} still contains ${unique.length} unresolved token(s): ${unique.join(', ')}`
+          );
+        } else {
+          console.log(`[privacy] ${file}: real values restored`);
+        }
+      } else {
+        const hasTokens = /PRIVACY_VALUE_|PRIVACY_REDACTED_|CANDIDATE_/.test(content);
+        console.log(`[privacy] ${file}: ${hasTokens ? 'contains tokens' : 'no tokens detected'}`);
+      }
+    }
+
+    if (mode === 'scrub' && Object.keys(map).length > 0) saveTokenMap(map);
+  } finally {
+    if (lock) releaseOrWarn(lock);
+  }
 }
 
 if (isMainModule(import.meta.url)) {
-  main();
+  await main();
 }
 
 export {

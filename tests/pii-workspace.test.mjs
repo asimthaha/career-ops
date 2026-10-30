@@ -47,6 +47,19 @@ test('scrub allocates YAML-safe tokens and reuses only on exact case match', () 
   assert.equal(map['PRIVACY_VALUE_3'], 'jordan placeholder');
 });
 
+test('scrub handles numeric-only guard without throwing', () => {
+  const mockGuard = {
+    textValues: new Set(),
+    digitStrings: new Set(['150000']),
+    digitRuns: new Set(['150000']),
+  };
+  const map = {};
+  const text = 'Base salary: 150000';
+  const scrubbed = scrub(text, mockGuard, map);
+  assert.equal(scrubbed, 'Base salary: 150000');
+  assert.equal(Object.keys(map).length, 0);
+});
+
 test('rehydrate performs single-pass lookup avoiding prefix corruption for overlapping tokens', () => {
   const map = {
     PRIVACY_VALUE_1: 'Alice',
@@ -105,6 +118,26 @@ test('atomicWriteFileSync writes atomically and preserves file mode', () => {
     if (process.platform !== 'win32') {
       const mode = fs.statSync(target).mode & 0o777;
       assert.equal(mode, expectedMode);
+    }
+  });
+});
+
+test('atomicWriteFileSync preserves restrictive mode (0o600) set via chmodSync', () => {
+  withTempDir((dir) => {
+    const target = path.join(dir, 'restrictive.txt');
+    fs.writeFileSync(target, 'initial');
+    try {
+      fs.chmodSync(target, 0o600);
+    } catch {
+      /* ignore on platforms where chmod is not supported */
+    }
+
+    atomicWriteFileSync(target, 'updated', 'utf8');
+    assert.equal(fs.readFileSync(target, 'utf8'), 'updated');
+
+    if (process.platform !== 'win32') {
+      const mode = fs.statSync(target).mode & 0o777;
+      assert.equal(mode, 0o600);
     }
   });
 });
