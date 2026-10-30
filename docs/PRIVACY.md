@@ -172,10 +172,15 @@ career-ops itself.
 export PRIVACY_REDACT=1
 ```
 
-Instead of blocking, this replaces **configured** values with placeholder tokens
-on the way out and rehydrates them in the response. It is not the default because
-silently altering a prompt changes what the model was asked. Prefer blocking,
-or narrowing your config.
+Instead of blocking, this replaces **configured text** values with placeholder
+tokens on the way out and rehydrates them in `text()` and `json()` responses.
+Configured numbers and enabled `auto_detect` patterns still block requests, as
+they cannot be safely tokenized or rehydrated. Streaming consumers (such as
+`openai-eval.mjs`) read directly from the response stream and receive tokens
+without rehydration.
+
+Redact mode is not the default because silently altering a prompt changes what
+the model was asked. Prefer blocking, or narrowing your config.
 
 ---
 
