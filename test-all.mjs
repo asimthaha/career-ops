@@ -15567,6 +15567,7 @@ try {
   // the per-request call must NOT re-embed the full systemPrompt inline (that
   // would defeat stable-prefix caching and duplicate the context)
   const noInlinePrefix = !/generateContent\(\[[\s\S]*?\{\s*text:\s*systemPrompt\s*\}/.test(src);
+  // inline template, or a named turn (#5571 hands the same turn to the PII guard first)
   const carriesJdTurn =
     /generateContent\(`JOB DESCRIPTION TO EVALUATE/.test(src) ||
     /(?:const|let|var)\s+(\w+)\s*=\s*`JOB DESCRIPTION TO EVALUATE[\s\S]*?assertGoogleRequestAllowed\(\{[\s\S]*?turns:\s*\[\s*\1\s*\][\s\S]*?\}\);?(?:\s*|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*(?:(?:const|let|var)\s+\w+\s*=\s*)?await\s+(?:\w+\.)?generateContent\(\s*\1\s*\)/.test(src);
