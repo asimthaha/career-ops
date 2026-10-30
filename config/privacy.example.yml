@@ -33,13 +33,13 @@ enabled: true
 # docs/PRIVACY.md. Turn one off if it blocks something legitimate (for example,
 # a job description that legitimately contains a recruiter's email address).
 auto_detect:
-  # Email addresses anywhere in the request. Default: on.
+  # Email addresses anywhere in the request. Omitted keys default to off.
   email: true
   # Phone-like numbers. The loosest pattern; turn it off first if you get
-  # false positives on posting text. Default: on.
+  # false positives on posting text.
   phone: true
   # Personal profile URLs (linkedin.com/in/..., github.com/<user>, ...).
-  # Default: off, because some CVs legitimately cite a personal project repo.
+  # Some CVs legitimately cite a personal project repo.
   profile_url: false
 
 # ---------------------------------------------------------------------------

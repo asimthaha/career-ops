@@ -137,7 +137,7 @@ endpoints) are checked.
 | Body is a `ReadableStream` / `FormData` / `URLSearchParams` / `Blob` / `ArrayBuffer` | **Blocked.** Their content lives in internal slots JSON cannot see, so the guard refuses them rather than inspecting 2 bytes and clearing the request. Read it to text yourself and pass the string. |
 | Body is a `Buffer` / typed array | **Inspected as decoded text.** Not refused: its bytes are decodable, so the guard decodes them and scans that. |
 | Config file present but unparseable | **Error.** The guard refuses to run on a config it cannot read. |
-| Config file absent | **Allowed, by design.** Documented safe state: pattern detection still runs. Reported as `absent`, not as protection you configured. |
+| Config file absent | **Allowed, by design.** Documented safe state: no configured checks, and pattern detection is opt-in (disabled by default). Reported as `absent`, not as protection you configured. |
 | Config file present but empty | Same as absent, reported as `empty`. |
 
 The label is the YAML **key path** of the value that matched, so a block message
