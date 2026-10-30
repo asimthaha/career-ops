@@ -15581,7 +15581,7 @@ try {
   // inline template, or a named turn (#5571 hands the same turn to the PII guard first)
   const carriesJdTurn =
     /generateContent\(`JOB DESCRIPTION TO EVALUATE/.test(src) ||
-    /(?:const|let|var)\s+(\w+)\s*=\s*`JOB DESCRIPTION TO EVALUATE[\s\S]*?assertGoogleRequestAllowed\(\{[\s\S]*?turns:\s*\[\s*\1\s*\][\s\S]*?\}\);?(?:\s*|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*(?:(?:const|let|var)\s+\w+\s*=\s*)?await\s+(?:\w+\.)?generateContent\(\s*\1\s*\)/.test(src);
+    /(?:const|let|var)\s+(\w+)\s*=\s*`JOB DESCRIPTION TO EVALUATE[\s\S]*?assertGoogleRequestAllowed\(\{[\s\S]*?turns:\s*\[\s*\1\s*\][\s\S]*?\}\);?(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*(?:(?:const|let|var)\s+\w+\s*=\s*)?await\s+(?:\w+\.)?generateContent\(\s*\1\s*\)/.test(src);
   if (usesSystemInstruction && noInlinePrefix && carriesJdTurn) {
     pass('gemini-eval moves the static prefix to systemInstruction and sends only the JD turn (#1709)');
   } else {
