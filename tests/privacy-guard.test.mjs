@@ -170,7 +170,7 @@ test('4b. a blocked request names the config key, never the value', () => {
   withConfigFile(
     ['protected:', `  full_name: "${FAKE.name}"`, `  phone: "${FAKE.phone}"`, ''].join('\n'),
     (path) => {
-      const guard = loadPrivacyGuard({ configPath: path });
+      const guard = loadPrivacyGuard({ configPath: path, env: {} });
       let caught;
       try {
         guard.assertSafe('reference 9991555010019999 in the posting');
@@ -190,7 +190,7 @@ test('4b. a blocked request names the config key, never the value', () => {
   withConfigFile(
     ['protected:', `  full_name: "${FAKE.name}"`, '  salary:', '    current_base: 145000', ''].join('\n'),
     (path) => {
-      const guard = loadPrivacyGuard({ configPath: path });
+      const guard = loadPrivacyGuard({ configPath: path, env: {} });
       assert.throws(
         () => guard.assertSafe('my base is 145000'),
         (err) => /protected\.salary\.current_base/.test(err.message)
@@ -297,6 +297,13 @@ test('7c. a digit_run value is detected even when other numbers surround it in t
   // Adjacent numeric values in a JSON array without space: [1024,98765]
   // Comma must not be stripped as a thousands separator here, so 98765 stays separate.
   assert.throws(() => guard.assertSafe('tokens: [1024,98765]'), PrivacyGuardError, 'adjacent array numbers');
+
+  // Adjacent numeric values where the following number is 3 digits: [98765,123]
+  // Must preserve 98765 even if comma normalization would merge 98765,123 into 98765123.
+  assert.throws(() => guard.assertSafe('items: [98765,123]'), PrivacyGuardError, 'number before 3-digit number');
+
+  // Formatted with thousands separator: 98,765
+  assert.throws(() => guard.assertSafe('amount: 98,765'), PrivacyGuardError, 'thousands separator formatted number');
 });
 
 // ---------------------------------------------------------------------------
@@ -418,6 +425,14 @@ test('8. auto-detection is pattern-based and each kind can be switched off', () 
   assert.throws(() => profileOn.assertSafe(`see ${FAKE.linkedin}`), PrivacyGuardError);
 });
 
+test('8b. guarding FAKE.email does not block text containing another email address when auto-detect is off', () => {
+  const guard = new PrivacyGuard({
+    values: [FAKE.email],
+    autoDetect: { email: false },
+  });
+  assert.equal(guard.assertSafe('contact recruiter at hr@company.com'), true);
+});
+
 // ---------------------------------------------------------------------------
 // 9. Fail-closed on an unreadable payload.
 // ---------------------------------------------------------------------------
@@ -441,30 +456,21 @@ test('9. a payload that cannot be inspected is refused, not allowed', () => {
 // 10. The bypass needs TWO factors and cannot be triggered by one.
 // ---------------------------------------------------------------------------
 test('10. disabling the guard requires both an explicit flag and a token', () => {
-  const saved = { ...process.env };
+  // A single variable is not enough.
+  const envOnlyFlag = { PRIVACY_GUARD: 'off' };
+  assert.equal(bypassRequested(envOnlyFlag), false, 'flag alone must not disable the guard');
+  assert.equal(loadPrivacyGuard({ configPath: join(tmpdir(), 'nope.yml'), env: envOnlyFlag }).enabled, true);
 
-  try {
-    // A single variable is not enough.
-    process.env.PRIVACY_GUARD = 'off';
-    delete process.env.PRIVACY_BYPASS_TOKEN;
-    assert.equal(bypassRequested(), false, 'flag alone must not disable the guard');
-    assert.equal(loadPrivacyGuard({ configPath: join(tmpdir(), 'nope.yml') }).enabled, true);
+  // An unrelated truthy value is not the flag.
+  const envTruthy = { PRIVACY_GUARD: 'true', PRIVACY_BYPASS_TOKEN: 'anything' };
+  assert.equal(bypassRequested(envTruthy), false, 'only off/disabled/0 counts as the flag');
 
-    // An unrelated truthy value is not the flag.
-    process.env.PRIVACY_GUARD = 'true';
-    process.env.PRIVACY_BYPASS_TOKEN = 'anything';
-    assert.equal(bypassRequested(), false, 'only off/disabled/0 counts as the flag');
-
-    // Both factors together: now, and only now, is the guard off.
-    process.env.PRIVACY_GUARD = 'off';
-    process.env.PRIVACY_BYPASS_TOKEN = 'i-understand-the-risk';
-    assert.equal(bypassRequested(), true);
-    const bypassed = loadPrivacyGuard({ configPath: join(tmpdir(), 'nope.yml') });
-    assert.equal(bypassed.enabled, false);
-    assert.equal(bypassed.assertSafe(`send ${FAKE.email}`), true, 'a bypassed guard allows');
-  } finally {
-    process.env = saved;
-  }
+  // Both factors together: now, and only now, is the guard off.
+  const envBoth = { PRIVACY_GUARD: 'off', PRIVACY_BYPASS_TOKEN: 'i-understand-the-risk' };
+  assert.equal(bypassRequested(envBoth), true);
+  const bypassed = loadPrivacyGuard({ configPath: join(tmpdir(), 'nope.yml'), env: envBoth });
+  assert.equal(bypassed.enabled, false);
+  assert.equal(bypassed.assertSafe(`send ${FAKE.email}`), true, 'a bypassed guard allows');
 });
 
 // ---------------------------------------------------------------------------
@@ -590,6 +596,26 @@ test('12b. redact mode tokenizes instead of blocking, and only when opted in', a
   assert.ok(sentBody, 'in redact mode the request IS sent');
   assert.ok(!sentBody.includes(FAKE.email), 'the real value was scrubbed out');
   assert.match(sentBody, /PRIVACY_REDACTED_/, 'a placeholder took its place');
+
+  // assertLlmRequestAllowed skips configured-text rejection when redact mode is enabled
+  assert.equal(
+    assertLlmRequestAllowed('https://openrouter.ai/api/v1/chat/completions', JSON.stringify({ q: FAKE.name }), {
+      guard,
+      allowRedact: true,
+    }).allowed,
+    true,
+    'configured text is allowed through to wrapFetch in redact mode'
+  );
+  // but it still rejects non-text/numeric findings even with allowRedact: true
+  assert.throws(
+    () =>
+      assertLlmRequestAllowed('https://openrouter.ai/api/v1/chat/completions', JSON.stringify({ q: FAKE.phone }), {
+        guard,
+        allowRedact: true,
+      }),
+    PrivacyGuardError,
+    'non-text finding still blocked in redact mode'
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -609,19 +635,19 @@ test('12c. redaction tokens do not leak across requests', async () => {
     json: async () => ({}),
   });
   const redacting = wrapFetch(mockFetch, { guard, redact: true });
-  const call = () =>
+  const call = (q) =>
     redacting('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ q: 'hello' }),
+      body: JSON.stringify({ q }),
     });
 
   // Request A redacts the name, so it has a token to put back.
-  const first = await call().then((r) => r.text());
-  assert.ok(!first.includes(FAKE.name), 'no real value in the first reply');
+  const first = await call(`hello ${FAKE.name}`).then((r) => r.text());
+  assert.ok(first.includes(FAKE.name), 'the echoed token is rehydrated to the real name in request A');
 
   // Request B carries no value at all, so its response must be left alone —
   // neither patched nor rehydrated against A's tokens.
-  const second = await call();
+  const second = await call('hello clean request');
   assert.ok(!second.text.toString().includes('rehydrate'), 'an unrelated response is not patched');
   assert.equal(await second.text(), 'the template literal {{PRIVACY_REDACTED_1}} appeared');
 });
