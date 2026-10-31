@@ -596,24 +596,27 @@ test('11c. assertGoogleRequestAllowed inspects systemInstruction and every turn'
 
   // Clean request passes.
   assert.doesNotThrow(() =>
-    assertGoogleRequestAllowed({ systemInstruction: 'You are a helpful evaluator.', turns: ['A job posting.'] }, { guard })
+    assertGoogleRequestAllowed(
+      { systemInstruction: 'You are a helpful evaluator.', turns: ['A job posting.'] },
+      { guard, allowRedact: false }
+    )
   );
 
   // A value in the user turn is blocked.
   assert.throws(
-    () => assertGoogleRequestAllowed({ turns: [`Contact me at ${FAKE.email}`] }, { guard }),
+    () => assertGoogleRequestAllowed({ turns: [`Contact me at ${FAKE.email}`] }, { guard, allowRedact: false }),
     PrivacyGuardError
   );
 
   // A value in the systemInstruction is blocked too, not just the turns.
   assert.throws(
-    () => assertGoogleRequestAllowed({ systemInstruction: `Candidate: ${FAKE.name}`, turns: ['ok'] }, { guard }),
+    () => assertGoogleRequestAllowed({ systemInstruction: `Candidate: ${FAKE.name}`, turns: ['ok'] }, { guard, allowRedact: false }),
     PrivacyGuardError
   );
 
   // A value in the SECOND turn of a multi-turn request is found as well.
   assert.throws(
-    () => assertGoogleRequestAllowed({ turns: ['first', `call ${FAKE.phone}`] }, { guard }),
+    () => assertGoogleRequestAllowed({ turns: ['first', `call ${FAKE.phone}`] }, { guard, allowRedact: false }),
     PrivacyGuardError
   );
 });
