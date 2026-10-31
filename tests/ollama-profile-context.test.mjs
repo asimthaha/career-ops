@@ -6,9 +6,10 @@
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import {
-  copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync,
+  copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { listTree } from '../lib/walk-tree.mjs';
 import { pass, fail, ownRootEnv, NODE, ROOT } from './helpers.mjs';
 
 console.log('\nollama-eval — includes profile.yml and _profile.md in model context (#2488)');
@@ -22,12 +23,7 @@ const copyIntoFixture = (relativePath) => {
 
 /** Copy a directory (and everything under it) into the fixture root. */
 const copyDirIntoFixture = (relativeDir) => {
-  const sourceDir = join(ROOT, relativeDir);
-  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    const rel = `${relativeDir}/${entry.name}`;
-    if (entry.isDirectory()) copyDirIntoFixture(rel);
-    else copyIntoFixture(rel);
-  }
+  for (const abs of listTree(join(ROOT, relativeDir))) copyIntoFixture(relative(ROOT, abs));
 };
 
 // The fixture is a hand-maintained transitive closure of ollama-eval's imports,

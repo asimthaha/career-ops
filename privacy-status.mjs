@@ -54,6 +54,7 @@ const asJson = process.argv.includes('--json');
  * @property {boolean} configPresent
  * @property {string} configSource
  * @property {number} configuredCount
+ * @property {number} [rawConfiguredCount]
  * @property {Record<string, boolean>} autoDetect
  * @property {number} llmHostCount
  * @property {string} [error]
@@ -68,6 +69,7 @@ function collect() {
     configPresent: existsSync(configPath),
     configSource: 'unknown',
     configuredCount: 0,
+    rawConfiguredCount: 0,
     autoDetect: { ...AUTO_DETECT_DEFAULTS },
     llmHostCount: LLM_HOSTS.length,
   };
@@ -90,12 +92,16 @@ function collect() {
       report.state = 'disabled-by-config';
       return report;
     }
+    report.rawConfiguredCount = config.values?.length ?? 0;
     report.configuredCount = config.values.filter((v) => normalizeValue(v) !== null).length;
     return report;
   } catch (err) {
     if (err instanceof PrivacyConfigError) {
       report.state = 'config-error';
-      report.error = `Could not parse configuration file at ${configPath}. Fix the YAML syntax or remove the file.`;
+      const reason = err.message ? err.message.replace(/^privacy:\s*/i, '').trim() : 'unreadable configuration';
+      report.error = reason.includes(configPath)
+        ? reason
+        : `Could not load configuration file at ${configPath}: ${reason}`;
       return report;
     }
     throw err;
@@ -153,8 +159,15 @@ function render(report) {
   } else if (report.configSource === 'empty') {
     lines.push(`  ℹ️  ${report.configPath} exists but configures no values.`);
   } else if (report.configuredCount === 0) {
-    lines.push(`  ℹ️  ${report.configPath} loaded, but every value was too short to guard`);
-    lines.push('      safely (5+ characters, 5+ digits). Nothing configured is protected.');
+    if (report.rawConfiguredCount > 0) {
+      lines.push(`  ℹ️  ${report.configPath} loaded, but every value was too short to guard`);
+      lines.push('      safely (5+ characters, 5+ digits). Nothing configured is protected.');
+    } else if (active.length > 0) {
+      lines.push(`  ✅ Guard active: running with pattern detection only; the enabled`);
+      lines.push('     patterns above are blocked on outbound LLM requests.');
+    } else {
+      lines.push(`  ℹ️  ${report.configPath} exists but configures no values.`);
+    }
   } else {
     lines.push(`  ✅ Guard active: ${report.configuredCount} configured value(s) and`);
     lines.push('     the enabled patterns above are blocked on outbound LLM requests.');

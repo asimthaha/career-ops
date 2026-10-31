@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import {
   PrivacyGuard,
@@ -26,7 +26,9 @@ import {
   readPrivacyConfig,
   loadPrivacyGuard,
   bypassRequested,
+  getPrivacyConfigPath,
 } from '../lib/privacy-guard.mjs';
+import { getCareerOpsRoot } from '../path-resolver.mjs';
 import {
   assertGoogleRequestAllowed,
   assertLlmRequestAllowed,
@@ -440,14 +442,12 @@ test('8. auto-detection is pattern-based and each kind can be switched off', () 
   // ...and is detected when explicitly enabled.
   const profileOn = new PrivacyGuard({ values: [], autoDetect: { profile_url: true } });
   assert.throws(() => profileOn.assertSafe(`see ${FAKE.linkedin}`), PrivacyGuardError);
-});
 
-test('8b. guarding FAKE.email does not block text containing another email address when auto-detect is off', () => {
-  const guard = new PrivacyGuard({
-    values: [FAKE.email],
-    autoDetect: { email: false },
-  });
-  assert.equal(guard.assertSafe('contact recruiter at hr@company.com'), true);
+  // When auto-detect email is off, configuring FAKE.email blocks FAKE.email
+  // but does NOT block text containing another email address.
+  const emailValOnly = new PrivacyGuard({ values: [FAKE.email], autoDetect: { email: false } });
+  assert.throws(() => emailValOnly.assertSafe(`reach me at ${FAKE.email}`), PrivacyGuardError);
+  assert.equal(emailValOnly.assertSafe('contact the recruiter at hr@company.com'), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -511,6 +511,24 @@ test('11. the fetch wrapper blocks LLM requests and passes non-LLM ones through'
     PrivacyGuardError
   );
   assert.equal(sent.length, 0, 'nothing was sent');
+
+  // ── An LLM Request instance carrying a protected value is also blocked.
+  const req = new Request('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    body: JSON.stringify({ q: FAKE.email }),
+  });
+  await assert.rejects(() => blocked(req), PrivacyGuardError);
+  assert.equal(sent.length, 0, 'nothing was sent for Request instance');
+
+  // ── A Buffer body in init is also scanned as text and blocked.
+  await assert.rejects(
+    () => blocked('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      body: Buffer.from(JSON.stringify({ q: FAKE.email })),
+    }),
+    PrivacyGuardError
+  );
+  assert.equal(sent.length, 0, 'nothing was sent for Buffer body');
 
   // ── A clean LLM request goes through.
   await blocked('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', body: JSON.stringify({ q: 'a normal prompt' }) });
@@ -837,3 +855,134 @@ test('config/privacy.example.yml parses and contains no real-looking secret', as
   assert.match(text, /example\.com/, 'placeholders use the reserved example domain');
   assert.doesNotMatch(text, /555-01-0199[\s\S]*real/i, 'no claim of real data');
 });
+
+test('CAREER_OPS_PRIVACY override resolves relative paths against getCareerOpsRoot() and preserves absolute paths', () => {
+  const orig = process.env.CAREER_OPS_PRIVACY;
+  try {
+    const root = getCareerOpsRoot();
+    process.env.CAREER_OPS_PRIVACY = 'custom/privacy.yml';
+    assert.equal(getPrivacyConfigPath(), resolve(root, 'custom/privacy.yml'));
+
+    const absPath = resolve(root, 'somewhere', 'privacy.yml');
+    process.env.CAREER_OPS_PRIVACY = absPath;
+    assert.equal(getPrivacyConfigPath(), absPath);
+  } finally {
+    if (orig !== undefined) process.env.CAREER_OPS_PRIVACY = orig;
+    else delete process.env.CAREER_OPS_PRIVACY;
+  }
+});
+
+test('readPrivacyConfig validates protected section shape: accepts lists and mappings, rejects scalars', () => {
+  withConfigFile('protected: "scalar-value"\n', (path) => {
+    assert.throws(() => readPrivacyConfig(path), {
+      name: 'PrivacyConfigError',
+      message: new RegExp(`${path.replace(/\\/g, '\\\\')} protected section must be a mapping or list, got string`),
+    });
+  });
+
+  withConfigFile('protected: 12345\n', (path) => {
+    assert.throws(() => readPrivacyConfig(path), {
+      name: 'PrivacyConfigError',
+      message: /protected section must be a mapping or list, got number/,
+    });
+  });
+
+  withConfigFile('protected: null\n', (path) => {
+    assert.throws(() => readPrivacyConfig(path), {
+      name: 'PrivacyConfigError',
+      message: /protected section must be a mapping or list, got null/,
+    });
+  });
+
+  withConfigFile('protected:\n  - "Jordan A. Placeholder"\n  - "jordan@example.com"\n', (path) => {
+    const config = readPrivacyConfig(path);
+    assert.deepEqual(config.values, ['Jordan A. Placeholder', 'jordan@example.com']);
+    assert.deepEqual(config.valueKeys, ['protected[0]', 'protected[1]']);
+  });
+});
+
+test('configured email does not block opt-in redaction when email detection is enabled', async () => {
+  const guard = new PrivacyGuard({
+    values: [FAKE.email],
+    autoDetect: { email: true },
+  });
+
+  // Preflight check in allowRedact mode allows configured email through
+  const decision = assertLlmRequestAllowed(
+    'https://openrouter.ai/api/v1/chat/completions',
+    JSON.stringify({ q: `hello ${FAKE.email}` }),
+    { guard, allowRedact: true }
+  );
+  assert.equal(decision.allowed, true);
+
+  // wrapFetch successfully scrubs and delivers without blocking
+  let sentBody = null;
+  const mockFetch = async (_url, init) => {
+    sentBody = init?.body;
+    return { ok: true, text: async () => '{}', json: async () => ({}) };
+  };
+  const redacting = wrapFetch(mockFetch, { guard, redact: true });
+  await redacting('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    body: JSON.stringify({ q: `contact ${FAKE.email}` }),
+  });
+  assert.ok(sentBody);
+  assert.ok(!sentBody.includes(FAKE.email));
+  assert.match(sentBody, /PRIVACY_REDACTED_/);
+
+  // But an unconfigured email is still blocked when email auto-detection is on
+  assert.throws(
+    () =>
+      assertLlmRequestAllowed(
+        'https://openrouter.ai/api/v1/chat/completions',
+        JSON.stringify({ q: 'unconfigured email other@example.com' }),
+        { guard, allowRedact: true }
+      ),
+    PrivacyGuardError
+  );
+});
+
+test('privacy-status renders pattern-only message when patterns are enabled without guarded values', async () => {
+  const { execFileSync } = await import('node:child_process');
+  withConfigFile('auto_detect:\n  email: true\n', (path) => {
+    const out = execFileSync(process.execPath, [resolve(import.meta.dirname, '../privacy-status.mjs')], {
+      env: { ...process.env, CAREER_OPS_PRIVACY: path },
+      encoding: 'utf-8',
+    });
+    assert.match(out, /running with pattern detection only/);
+    assert.doesNotMatch(out, /every value was too short/);
+  });
+});
+
+test('privacy-status renders too-short message when values were actually rejected as too short', async () => {
+  const { execFileSync } = await import('node:child_process');
+  withConfigFile('protected:\n  short: "abc"\n', (path) => {
+    const out = execFileSync(process.execPath, [resolve(import.meta.dirname, '../privacy-status.mjs')], {
+      env: { ...process.env, CAREER_OPS_PRIVACY: path },
+      encoding: 'utf-8',
+    });
+    assert.match(out, /every value was too short to guard/);
+  });
+});
+
+test('privacy-status error message reflects actual reason for top-level non-mapping and preserves configPath context', async () => {
+  const { execFileSync } = await import('node:child_process');
+  withConfigFile('- just\n- a list\n', (path) => {
+    let err;
+    try {
+      execFileSync(process.execPath, [resolve(import.meta.dirname, '../privacy-status.mjs'), '--json'], {
+        env: { ...process.env, CAREER_OPS_PRIVACY: path },
+        encoding: 'utf-8',
+      });
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err, 'exits non-zero on config-error');
+    assert.equal(err.status, 1);
+    const parsed = JSON.parse(err.stdout);
+    assert.equal(parsed.state, 'config-error');
+    assert.match(parsed.error, /must be a YAML mapping at the top level, got a list/);
+    assert.ok(parsed.error.includes(path));
+  });
+});
+

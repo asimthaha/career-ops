@@ -39,6 +39,14 @@ values themselves**.
 `config/privacy.yml` is gitignored. The committed `config/privacy.example.yml`
 holds only fictional placeholders.
 
+> **Read this before you enable it.** Evaluations send your whole
+> `cv.md` to the provider, and the guard inspects the whole request. So if your
+> name is listed under `protected:`, or your CV contains an email or phone number
+> while `auto_detect` is on, every evaluation that includes the CV is blocked
+> until those values are out of `cv.md` or out of this config. List what must
+> never leave the machine and is not in your CV, or use `PRIVACY_REDACT=1`
+> (see below).
+
 ---
 
 ## What it blocks
