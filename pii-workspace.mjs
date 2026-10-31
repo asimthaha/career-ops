@@ -242,6 +242,7 @@ async function main() {
 
   try {
     const map = loadTokenMap();
+    let hasUnresolved = false;
 
     for (const file of USER_FILES) {
       const filePath = path.join(root, file);
@@ -263,6 +264,7 @@ async function main() {
         if (restored !== content) atomicWriteFileSync(filePath, restored, 'utf8');
         const unresolved = restored.match(/PRIVACY_VALUE_\d+/g);
         if (unresolved && unresolved.length > 0) {
+          hasUnresolved = true;
           const unique = [...new Set(unresolved)];
           console.warn(
             `[privacy] WARNING: ${file} still contains ${unique.length} unresolved token(s): ${unique.join(', ')}`
@@ -276,7 +278,17 @@ async function main() {
       }
     }
 
-    if (mode === 'scrub' && Object.keys(map).length > 0) saveTokenMap(map);
+    if (mode === 'scrub' && Object.keys(map).length > 0) {
+      saveTokenMap(map);
+    } else if (mode === 'restore' && !hasUnresolved) {
+      try {
+        if (fs.existsSync(tokenMapPath)) {
+          fs.unlinkSync(tokenMapPath);
+        }
+      } catch {
+        /* ignore error if token map could not be removed */
+      }
+    }
   } finally {
     if (lock) releaseOrWarn(lock);
   }

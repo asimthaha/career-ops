@@ -226,4 +226,36 @@ test('pii-workspace.mjs --help and -h print usage and exit 0', () => {
   }
 });
 
+test('restore removes token map when completed with none unresolved and keeps it if unresolved remain', () => {
+  withTempDir((dir) => {
+    const scriptPath = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'pii-workspace.mjs');
+    const tokenMap = path.join(dir, '.pii-token-map.json');
+    const cvFile = path.join(dir, 'cv.md');
+
+    // Case 1: All tokens resolved -> token map removed
+    fs.writeFileSync(tokenMap, JSON.stringify({ PRIVACY_VALUE_1: 'Alice' }), 'utf8');
+    fs.writeFileSync(cvFile, 'Candidate: PRIVACY_VALUE_1', 'utf8');
+
+    const resClean = spawnSync(process.execPath, [scriptPath, 'restore'], {
+      encoding: 'utf8',
+      env: { ...process.env, CAREER_OPS_ROOT: dir },
+    });
+    assert.equal(resClean.status, 0);
+    assert.equal(fs.readFileSync(cvFile, 'utf8'), 'Candidate: Alice');
+    assert.equal(fs.existsSync(tokenMap), false, 'token map should be removed after clean restore');
+
+    // Case 2: Unresolved tokens remain -> token map kept
+    fs.writeFileSync(tokenMap, JSON.stringify({ PRIVACY_VALUE_1: 'Alice' }), 'utf8');
+    fs.writeFileSync(cvFile, 'Candidate: PRIVACY_VALUE_1 and PRIVACY_VALUE_99', 'utf8');
+
+    const resUnresolved = spawnSync(process.execPath, [scriptPath, 'restore'], {
+      encoding: 'utf8',
+      env: { ...process.env, CAREER_OPS_ROOT: dir },
+    });
+    assert.equal(resUnresolved.status, 0);
+    assert.equal(fs.readFileSync(cvFile, 'utf8'), 'Candidate: Alice and PRIVACY_VALUE_99');
+    assert.equal(fs.existsSync(tokenMap), true, 'token map should be preserved when tokens remain unresolved');
+  });
+});
+
 
