@@ -236,8 +236,10 @@ async function main() {
           // Persist the token map immediately before each rewritten file loses its real values.
           saveTokenMap(map);
           atomicWriteFileSync(filePath, scrubbed, 'utf8');
+          console.log(`[privacy] ${file}: tokenized`);
+        } else {
+          console.log(`[privacy] ${file}: no configured text values found (unchanged)`);
         }
-        console.log(`[privacy] ${file}: tokenized (${Object.keys(map).length} token(s) mapped)`);
       } else if (mode === 'restore') {
         const restored = rehydrate(content, map);
         if (restored !== content) atomicWriteFileSync(filePath, restored, 'utf8');
