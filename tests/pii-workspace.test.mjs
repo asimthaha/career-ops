@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   scrub,
@@ -195,6 +197,17 @@ test('loadTokenMap throws error on corrupt or invalid token map file', () => {
     const absentFile = path.join(dir, 'absent-map.json');
     assert.deepEqual(loadTokenMap(absentFile), {});
   });
+});
+
+test('pii-workspace.mjs --help and -h print usage and exit 0', () => {
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  for (const flag of ['--help', '-h']) {
+    const res = spawnSync(process.execPath, [path.join(root, 'pii-workspace.mjs'), flag], {
+      encoding: 'utf8',
+    });
+    assert.equal(res.status, 0);
+    assert.match(res.stdout, /^Usage: node pii-workspace\.mjs <scrub\|restore\|status>/);
+  }
 });
 
 

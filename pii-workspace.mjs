@@ -42,6 +42,17 @@ import { acquireDirLock, releaseOrWarn } from './lib/dir-lock.mjs';
 const USER_FILES = ['cv.md', 'config/profile.yml', 'modes/_profile.md'];
 const TOKEN_MAP_NAME = '.pii-token-map.json';
 
+const USAGE = `Usage: node pii-workspace.mjs <scrub|restore|status>
+
+Commands:
+  status   Report whether user files are tokenized or contain real PII
+  scrub    Replace configured PII values with placeholder tokens in user files
+  restore  Restore original PII values from token map into user files
+
+Options:
+  -h, --help  Show this help message
+`;
+
 const root = getCareerOpsRoot();
 const tokenMapPath = path.join(root, TOKEN_MAP_NAME);
 
@@ -175,6 +186,11 @@ function rehydrate(text, map) {
 }
 
 async function main() {
+  if (process.argv.slice(2).some((a) => a === '--help' || a === '-h')) {
+    console.log(USAGE);
+    process.exit(0);
+  }
+
   const mode = process.argv[2]; // 'scrub' | 'restore' | 'status'
 
   if (!mode || !['scrub', 'restore', 'status'].includes(mode)) {
