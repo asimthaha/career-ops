@@ -422,6 +422,25 @@ test('9c. a Buffer body is scanned as text, not as a byte array', () => {
   assert.equal(guard.assertSafe(Buffer.from('an ordinary job posting')), true);
 });
 
+test('9d. replaceBinaryViews honors custom toJSON() implementations', () => {
+  const guard = fakeGuard();
+  const customPayload = {
+    _secretInternal: 'clean',
+    toJSON() {
+      return { data: Buffer.from(FAKE.name) };
+    },
+  };
+  assert.throws(() => guard.assertSafe(customPayload), PrivacyGuardError);
+
+  const strippedPayload = {
+    _hiddenSecret: FAKE.name,
+    toJSON() {
+      return { safeField: 'public content' };
+    },
+  };
+  assert.equal(guard.assertSafe(strippedPayload), true);
+});
+
 // ---------------------------------------------------------------------------
 // 8. Auto-detection: emails and phones, with per-kind switches.
 // ---------------------------------------------------------------------------
