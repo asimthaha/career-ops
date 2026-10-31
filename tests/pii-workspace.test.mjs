@@ -39,14 +39,30 @@ test('scrub allocates YAML-safe tokens and reuses only on exact case match', () 
   // Unquoted scalar validity: no braces, colons, or quotes
   assert.doesNotMatch(scrubbed, /[{}[\]:"]/);
 
-  // Exact spelling match reuses token
-  assert.equal(scrubbed.match(/PRIVACY_VALUE_1/g).length, 2);
+  // Exact spelling match reuses token (jordan placeholder is processed second due to length)
+  assert.equal(scrubbed.match(/PRIVACY_VALUE_2/g).length, 2);
 
   // Case difference allocates separate token
   const differentCase = 'Small jordan placeholder was here.';
   const scrubbedDiff = scrub(differentCase, mockGuard, map);
   assert.match(scrubbedDiff, /PRIVACY_VALUE_3/);
   assert.equal(map['PRIVACY_VALUE_3'], 'jordan placeholder');
+});
+
+test('scrub processes guard.textValues longest first using sorted copy without mutating guard', () => {
+  const originalOrder = ['jordan', 'jordan placeholder'];
+  const mockGuard = {
+    textValues: new Set(originalOrder),
+  };
+  const map = {};
+  const text = 'Candidate Jordan Placeholder arrived today.';
+  const scrubbed = scrub(text, mockGuard, map);
+
+  // Entire phrase 'Jordan Placeholder' should be tokenized as one token, not 'PRIVACY_VALUE_1 Placeholder'
+  assert.equal(scrubbed, 'Candidate PRIVACY_VALUE_1 arrived today.');
+  assert.equal(map['PRIVACY_VALUE_1'], 'Jordan Placeholder');
+  // Original Set iteration order preserved
+  assert.deepEqual([...mockGuard.textValues], originalOrder);
 });
 
 test('scrub handles numeric-only guard without throwing', () => {

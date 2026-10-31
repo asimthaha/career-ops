@@ -148,7 +148,8 @@ function scrub(text, guard, map) {
   }
   let index = maxIndex;
 
-  for (const value of guard.textValues) {
+  const sortedValues = [...guard.textValues].sort((a, b) => b.length - a.length);
+  for (const value of sortedValues) {
     if (value.length < 5) continue;
     const re = new RegExp(escapeRe(value), 'gi');
     out = out.replace(re, (matched) => {

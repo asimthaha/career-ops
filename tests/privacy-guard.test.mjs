@@ -765,6 +765,25 @@ test('12e. redact mode scrubs JSON-escaped values and response.json restores val
   assert.ok(rawText.includes(quotedName));
 });
 
+test('12f. redact mode and redactPreview process configured text values longest first', async () => {
+  const guard = new PrivacyGuard({ values: ['Jordan', 'Jordan Placeholder'] });
+
+  let sentBody = null;
+  const mockFetch = async (input, init) => {
+    sentBody = init?.body;
+    return { ok: true, text: async () => 'echo', json: async () => ({}) };
+  };
+
+  const redacting = wrapFetch(mockFetch, { guard, redact: true });
+  await redacting('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    body: JSON.stringify({ q: 'Jordan Placeholder' }),
+  });
+
+  const parsed = JSON.parse(sentBody);
+  assert.match(parsed.q, /^\{\{PRIVACY_REDACTED_\d+\}\}$/);
+});
+
 // ---------------------------------------------------------------------------
 // Config loading: the shape the user actually writes.
 // ---------------------------------------------------------------------------
