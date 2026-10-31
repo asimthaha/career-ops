@@ -182,3 +182,19 @@ test('atomicWriteFileSync preserves symlink target and updates destination', (t)
   });
 });
 
+test('loadTokenMap throws error on corrupt or invalid token map file', () => {
+  withTempDir((dir) => {
+    const corruptFile = path.join(dir, 'corrupt-map.json');
+    fs.writeFileSync(corruptFile, 'not valid json {', 'utf8');
+    assert.throws(() => loadTokenMap(corruptFile), /Error reading token map/);
+
+    const arrayFile = path.join(dir, 'array-map.json');
+    fs.writeFileSync(arrayFile, '["an", "array"]', 'utf8');
+    assert.throws(() => loadTokenMap(arrayFile), /invalid token map structure/);
+
+    const absentFile = path.join(dir, 'absent-map.json');
+    assert.deepEqual(loadTokenMap(absentFile), {});
+  });
+});
+
+

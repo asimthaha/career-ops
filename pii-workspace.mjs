@@ -48,17 +48,17 @@ const tokenMapPath = path.join(root, TOKEN_MAP_NAME);
 /** Escape a literal so it can be used inside a RegExp. */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-function loadTokenMap() {
-  if (!fs.existsSync(tokenMapPath)) return {};
+function loadTokenMap(explicitPath) {
+  const mapPath = explicitPath ?? tokenMapPath;
+  if (!fs.existsSync(mapPath)) return {};
   try {
-    const parsed = JSON.parse(fs.readFileSync(tokenMapPath, 'utf-8'));
+    const parsed = JSON.parse(fs.readFileSync(mapPath, 'utf-8'));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('invalid token map structure');
     }
     return parsed;
   } catch (err) {
-    console.error(`[privacy] Error reading token map at ${tokenMapPath}: ${err.message}`);
-    process.exit(1);
+    throw new Error(`[privacy] Error reading token map at ${mapPath}: ${err.message}`);
   }
 }
 
@@ -115,8 +115,9 @@ function atomicWriteFileSync(targetPath, content, options = {}) {
   }
 }
 
-function saveTokenMap(map) {
-  atomicWriteFileSync(tokenMapPath, JSON.stringify(map, null, 2), { encoding: 'utf-8', mode: 0o600 });
+function saveTokenMap(map, explicitPath) {
+  const mapPath = explicitPath ?? tokenMapPath;
+  atomicWriteFileSync(mapPath, JSON.stringify(map, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }
 
 /**
@@ -262,7 +263,12 @@ async function main() {
 }
 
 if (isMainModule(import.meta.url)) {
-  await main();
+  try {
+    await main();
+  } catch (err) {
+    console.error(err.message);
+    process.exitCode = 1;
+  }
 }
 
 export {
