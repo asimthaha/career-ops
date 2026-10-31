@@ -24,7 +24,8 @@
  * `config/privacy.yml` and the old tokens no longer map to it.
  *
  * The token map is written to the data root and gitignored; it holds your real
- * values, so treat it exactly as you treat `cv.md`.
+ * values, so treat it exactly as you treat `cv.md`. Warn AI agents not to read
+ * the token map, or place `CAREER_OPS_ROOT` outside the agent workspace.
  */
 
 import fs from 'node:fs';

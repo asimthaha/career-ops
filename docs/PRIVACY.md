@@ -200,14 +200,15 @@ agent reading `cv.md` and `config/profile.yml` from disk with its own file tools
 
 ```bash
 node pii-workspace.mjs status    # tokenized or holding real PII?
-node pii-workspace.mjs scrub     # replace configured values with tokens
+node pii-workspace.mjs scrub     # replace configured text values with tokens (numbers remain readable)
 node pii-workspace.mjs restore   # put the real values back
 ```
 
 > **`scrub` mutates your CV and profile in place.** A crash or a forgotten
 > `restore` leaves those files tokenized. Always run `restore` when the session
 > ends. The token map (`.pii-token-map.json`, gitignored) holds your real values,
-> so treat it exactly as you treat `cv.md`.
+> so treat it exactly as you treat `cv.md`. Warn CLI agents not to read the token
+> map, or place `CAREER_OPS_ROOT` outside the agent workspace.
 
 ---
 
@@ -239,6 +240,9 @@ Read these. The guard is useful precisely because its edges are stated.
    methods on the live response object. A caller that reads `response.body` as a
    stream receives the placeholder tokens, not your real values. Blocking mode —
    the default — has no equivalent gap.
+8. **`pii-workspace.mjs scrub` tokenizes configured text values only.** Configured
+   numeric values (such as salaries and phone numbers) cannot be tokenized and
+   remain readable on disk.
 
 ---
 
